@@ -37,9 +37,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-          tags: ghcr.io/ahmedmaherhosny/devops-cicd-lab:${{ github.sha }}
+          load: true
+          tags: myapp:${{ github.sha }}
+
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: myapp:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+      - name: Push Docker image
+        run: |
+          docker tag myapp:${{ github.sha }} ghcr.io/ahmedmaherhosny/devops-cicd-lab:${{ github.sha }}
+          docker push ghcr.io/ahmedmaherhosny/devops-cicd-lab:${{ github.sha }}
