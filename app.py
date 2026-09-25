@@ -9,10 +9,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_response(200)
+            self.send_response(500)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
-            self.wfile.write(b"OK")
+            self.wfile.write(b"UNHEALTHY")
 
         else:
             self.send_response(200)
