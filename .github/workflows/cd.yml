@@ -1,7 +1,7 @@
 name: CD
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       image_tag:
         description: "Docker image SHA to deploy"
@@ -34,7 +34,7 @@ jobs:
 
 
       # =========================================================
-      # 2. Pull the exact image we want to deploy
+      # 2. Pull EXACT image produced by CI
       # =========================================================
       - name: Pull Docker image
         shell: bash
@@ -43,7 +43,7 @@ jobs:
 
 
       # =========================================================
-      # 3. Find currently running container
+      # 3. Save currently running image
       # =========================================================
       - name: Get current image
         id: current
@@ -60,7 +60,7 @@ jobs:
 
 
       # =========================================================
-      # 4. Stop current container
+      # 4. Stop old container
       # =========================================================
       - name: Stop old container
         shell: bash
@@ -69,7 +69,7 @@ jobs:
 
 
       # =========================================================
-      # 5. Remove current container
+      # 5. Remove old container
       # =========================================================
       - name: Remove old container
         shell: bash
@@ -98,7 +98,7 @@ jobs:
         shell: bash
         run: |
 
-          echo "Waiting for application to start..."
+          echo "Waiting for application..."
 
           for i in {1..30}; do
 
@@ -128,7 +128,7 @@ jobs:
 
 
       # =========================================================
-      # 8. Show container information
+      # 8. Show container status
       # =========================================================
       - name: Show container status
         if: always()
@@ -167,7 +167,7 @@ jobs:
 
 
           # -----------------------------------
-          # Stop failed deployment
+          # Stop failed container
           # -----------------------------------
 
           docker stop ${{ env.CONTAINER_NAME }} 2>/dev/null || true
@@ -176,12 +176,12 @@ jobs:
 
 
           # -----------------------------------
-          # Check whether previous image exists
+          # Check previous image
           # -----------------------------------
 
           if [ -z "$CURRENT_IMAGE" ]; then
 
-            echo "No previous container/image found."
+            echo "No previous image found."
             echo "Nothing to rollback to."
 
             exit 1
@@ -248,7 +248,7 @@ jobs:
           echo "DEPLOYMENT SUCCESSFUL"
           echo "======================================"
 
-          echo "Image:"
+          echo "Image deployed:"
           echo "${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}"
 
           echo ""
