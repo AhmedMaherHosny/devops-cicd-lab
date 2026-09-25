@@ -1,0 +1,50 @@
+name: CD
+
+on:
+    workflow_dispatch:
+        inputs:
+            image_tag:
+                description: "Docker image tag to deploy"
+                required: true
+                type: string
+
+permissions:
+    packages: read
+
+env:
+    IMAGE_NAME: ghcr.io/ahmedmaherhosny/devops-cicd-lab
+
+jobs:
+    deploy:
+        runs-on: self-hosted
+
+        steps:
+            - name: Log in to GHCR
+              uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Pull Docker image
+              run: |
+                  docker pull ${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
+
+            - name: Stop old container
+              run: |
+                  docker stop myapp || true
+
+            - name: Remove old container
+              run: |
+                  docker rm myapp || true
+
+            - name: Run new container
+              run: |
+                  docker run -d \
+                    --name myapp \
+                    -p 8080:8080 \
+                    ${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
+
+            - name: Check running container
+              run: |
+                  docker ps
