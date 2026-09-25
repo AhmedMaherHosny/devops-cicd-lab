@@ -38,12 +38,12 @@ jobs:
               run: |
                   docker rm myapp || true
 
-            - name: Run new container
+            - name: Run application
               run: |
                   docker run -d \
-                    --name myapp \
-                    -p 8080:8080 \
-                    ${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
+                  --name myapp \
+                  -p 8080:8080 \
+                  ${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
 
             - name: Check running container
               run: |
