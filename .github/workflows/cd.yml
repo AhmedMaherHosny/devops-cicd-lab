@@ -2,29 +2,68 @@ name: CD
 
 on:
   workflow_call:
+
     inputs:
+
+      # -------------------------------------------------------
+      # Docker image SHA
+      # -------------------------------------------------------
       image_tag:
         description: "Docker image SHA to deploy"
         required: true
         type: string
 
+      # -------------------------------------------------------
+      # GitHub environment
+      # -------------------------------------------------------
+      environment:
+        description: "Deployment environment"
+        required: true
+        type: string
+
+      # -------------------------------------------------------
+      # Container name
+      # -------------------------------------------------------
+      container_name:
+        description: "Docker container name"
+        required: true
+        type: string
+
+      # -------------------------------------------------------
+      # Application port
+      # -------------------------------------------------------
+      app_port:
+        description: "Application port"
+        required: true
+        type: number
+
+
 permissions:
   packages: read
 
-env:
-  IMAGE_NAME: ghcr.io/ahmedmaherhosny/devops-cicd-lab
-  CONTAINER_NAME: myapp
-  APP_PORT: 8080
 
 jobs:
+
+  # =========================================================
+  # DEPLOY
+  # =========================================================
   deploy:
+
+    name: Deploy ${{ inputs.environment }}
+
     runs-on: self-hosted
+
+    # -------------------------------------------------------
+    # THIS activates GitHub Environment protection
+    # -------------------------------------------------------
+    environment:
+      name: ${{ inputs.environment }}
 
     steps:
 
-      # =========================================================
-      # 1. Login to GitHub Container Registry
-      # =========================================================
+      # =======================================================
+      # 1. Login to GHCR
+      # =======================================================
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -33,18 +72,24 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
 
-      # =========================================================
-      # 2. Pull EXACT image produced by CI
-      # =========================================================
+      # =======================================================
+      # 2. Pull exact image
+      # =======================================================
       - name: Pull Docker image
         shell: bash
         run: |
-          docker pull ${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
+
+          IMAGE="ghcr.io/ahmedmaherhosny/devops-cicd-lab:${{ inputs.image_tag }}"
+
+          echo "Pulling:"
+          echo "$IMAGE"
+
+          docker pull "$IMAGE"
 
 
-      # =========================================================
+      # =======================================================
       # 3. Save currently running image
-      # =========================================================
+      # =======================================================
       - name: Get current image
         id: current
         shell: bash
@@ -52,49 +97,61 @@ jobs:
 
           CURRENT_IMAGE=$(docker inspect \
             --format='{{.Config.Image}}' \
-            ${{ env.CONTAINER_NAME }} 2>/dev/null || true)
+            "${{ inputs.container_name }}" \
+            2>/dev/null || true)
 
-          echo "Current image: $CURRENT_IMAGE"
+          echo "Current image:"
+          echo "$CURRENT_IMAGE"
 
           echo "current_image=$CURRENT_IMAGE" >> "$GITHUB_OUTPUT"
 
 
-      # =========================================================
+      # =======================================================
       # 4. Stop old container
-      # =========================================================
+      # =======================================================
       - name: Stop old container
         shell: bash
         run: |
-          docker stop ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+
+          docker stop \
+            "${{ inputs.container_name }}" \
+            2>/dev/null || true
 
 
-      # =========================================================
+      # =======================================================
       # 5. Remove old container
-      # =========================================================
+      # =======================================================
       - name: Remove old container
         shell: bash
         run: |
-          docker rm ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+
+          docker rm \
+            "${{ inputs.container_name }}" \
+            2>/dev/null || true
 
 
-      # =========================================================
+      # =======================================================
       # 6. Start new container
-      # =========================================================
+      # =======================================================
       - name: Start new container
         shell: bash
         run: |
 
+          IMAGE="ghcr.io/ahmedmaherhosny/devops-cicd-lab:${{ inputs.image_tag }}"
+
+          echo "Starting:"
+          echo "$IMAGE"
+
           docker run -d \
-            --name ${{ env.CONTAINER_NAME }} \
-            -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} \
-            ${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
+            --name "${{ inputs.container_name }}" \
+            -p "${{ inputs.app_port }}:8080" \
+            "$IMAGE"
 
 
-      # =========================================================
+      # =======================================================
       # 7. Health check
-      # =========================================================
+      # =======================================================
       - name: Health check
-        id: health
         shell: bash
         run: |
 
@@ -105,14 +162,15 @@ jobs:
             echo "Health check attempt $i/30"
 
             if curl -fsS \
-              http://localhost:${{ env.APP_PORT }}/health; then
+              "http://localhost:${{ inputs.app_port }}/health"; then
 
               echo ""
               echo "======================================"
-              echo "Health check PASSED"
+              echo "HEALTH CHECK PASSED"
               echo "======================================"
 
               exit 0
+
             fi
 
             sleep 2
@@ -121,35 +179,39 @@ jobs:
 
           echo ""
           echo "======================================"
-          echo "Health check FAILED"
+          echo "HEALTH CHECK FAILED"
           echo "======================================"
 
           exit 1
 
 
-      # =========================================================
+      # =======================================================
       # 8. Show container status
-      # =========================================================
+      # =======================================================
       - name: Show container status
         if: always()
         shell: bash
         run: |
+
           docker ps -a
 
 
-      # =========================================================
+      # =======================================================
       # 9. Show application logs
-      # =========================================================
+      # =======================================================
       - name: Show application logs
         if: always()
         shell: bash
         run: |
-          docker logs ${{ env.CONTAINER_NAME }} 2>&1 || true
+
+          docker logs \
+            "${{ inputs.container_name }}" \
+            2>&1 || true
 
 
-      # =========================================================
-      # 10. Rollback if deployment failed
-      # =========================================================
+      # =======================================================
+      # 10. Rollback
+      # =======================================================
       - name: Rollback
         if: failure()
         shell: bash
@@ -157,7 +219,7 @@ jobs:
 
           echo "======================================"
           echo "DEPLOYMENT FAILED"
-          echo "Starting rollback..."
+          echo "STARTING ROLLBACK"
           echo "======================================"
 
           CURRENT_IMAGE="${{ steps.current.outputs.current_image }}"
@@ -166,18 +228,27 @@ jobs:
           echo "$CURRENT_IMAGE"
 
 
-          # -----------------------------------
+          # ---------------------------------------------------
           # Stop failed container
-          # -----------------------------------
+          # ---------------------------------------------------
 
-          docker stop ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+          docker stop \
+            "${{ inputs.container_name }}" \
+            2>/dev/null || true
 
-          docker rm ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+
+          # ---------------------------------------------------
+          # Remove failed container
+          # ---------------------------------------------------
+
+          docker rm \
+            "${{ inputs.container_name }}" \
+            2>/dev/null || true
 
 
-          # -----------------------------------
+          # ---------------------------------------------------
           # Check previous image
-          # -----------------------------------
+          # ---------------------------------------------------
 
           if [ -z "$CURRENT_IMAGE" ]; then
 
@@ -189,21 +260,21 @@ jobs:
           fi
 
 
-          # -----------------------------------
+          # ---------------------------------------------------
           # Start previous version
-          # -----------------------------------
+          # ---------------------------------------------------
 
           echo "Starting previous version..."
 
           docker run -d \
-            --name ${{ env.CONTAINER_NAME }} \
-            -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} \
+            --name "${{ inputs.container_name }}" \
+            -p "${{ inputs.app_port }}:8080" \
             "$CURRENT_IMAGE"
 
 
-          # -----------------------------------
-          # Verify rollback
-          # -----------------------------------
+          # ---------------------------------------------------
+          # Rollback health check
+          # ---------------------------------------------------
 
           echo "Checking rollback health..."
 
@@ -212,7 +283,7 @@ jobs:
             echo "Rollback health check attempt $i/30"
 
             if curl -fsS \
-              http://localhost:${{ env.APP_PORT }}/health; then
+              "http://localhost:${{ inputs.app_port }}/health"; then
 
               echo ""
               echo "======================================"
@@ -220,6 +291,7 @@ jobs:
               echo "======================================"
 
               exit 0
+
             fi
 
             sleep 2
@@ -235,9 +307,9 @@ jobs:
           exit 1
 
 
-      # =========================================================
+      # =======================================================
       # 11. Deployment successful
-      # =========================================================
+      # =======================================================
       - name: Deployment successful
         if: success()
         shell: bash
@@ -248,15 +320,23 @@ jobs:
           echo "DEPLOYMENT SUCCESSFUL"
           echo "======================================"
 
-          echo "Image deployed:"
-          echo "${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}"
+          echo "Environment:"
+          echo "${{ inputs.environment }}"
 
           echo ""
-          echo "Application:"
-          echo "http://localhost:${{ env.APP_PORT }}"
+          echo "Image:"
+          echo "ghcr.io/ahmedmaherhosny/devops-cicd-lab:${{ inputs.image_tag }}"
+
+          echo ""
+          echo "Container:"
+          echo "${{ inputs.container_name }}"
+
+          echo ""
+          echo "Port:"
+          echo "${{ inputs.app_port }}"
 
           echo ""
           echo "Health:"
-          echo "http://localhost:${{ env.APP_PORT }}/health"
+          echo "http://localhost:${{ inputs.app_port }}/health"
 
           echo "======================================"

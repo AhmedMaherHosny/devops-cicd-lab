@@ -14,28 +14,51 @@ env:
 
 jobs:
 
+  # =========================================================
+  # CI
+  # =========================================================
   test:
+    name: Test and Build
     runs-on: ubuntu-latest
 
     steps:
 
+      # -------------------------------------------------------
+      # Checkout
+      # -------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
+
+      # -------------------------------------------------------
+      # Setup Python
+      # -------------------------------------------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+
+      # -------------------------------------------------------
+      # Install dependencies
+      # -------------------------------------------------------
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+
+      # -------------------------------------------------------
+      # Unit tests
+      # -------------------------------------------------------
       - name: Run tests
         run: |
           pytest
 
+
+      # -------------------------------------------------------
+      # Build Docker image
+      # -------------------------------------------------------
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
@@ -43,6 +66,10 @@ jobs:
           load: true
           tags: myapp:${{ github.sha }}
 
+
+      # -------------------------------------------------------
+      # Trivy security scan
+      # -------------------------------------------------------
       - name: Scan Docker image
         uses: aquasecurity/trivy-action@master
         with:
@@ -51,6 +78,10 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+
+      # -------------------------------------------------------
+      # Login to GHCR
+      # -------------------------------------------------------
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -58,24 +89,59 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+
+      # -------------------------------------------------------
+      # Tag image
+      # -------------------------------------------------------
       - name: Tag Docker image
         run: |
           docker tag \
             myapp:${{ github.sha }} \
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
+
+      # -------------------------------------------------------
+      # Push image
+      # -------------------------------------------------------
       - name: Push Docker image
         run: |
           docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
 
-  deploy:
+  # =========================================================
+  # STAGING
+  # =========================================================
+  staging:
+    name: Deploy to Staging
     needs: test
 
     uses: ./.github/workflows/cd.yml
 
     with:
       image_tag: ${{ github.sha }}
+      environment: staging
+      container_name: myapp-staging
+      app_port: 8081
+
+    permissions:
+      contents: read
+      packages: read
+
+
+  # =========================================================
+  # PRODUCTION
+  # =========================================================
+  production:
+    name: Deploy to Production
+    needs: staging
+
+    uses: ./.github/workflows/cd.yml
+
+    with:
+      image_tag: ${{ github.sha }}
+      environment: production
+      container_name: myapp-production
+      app_port: 8080
 
     permissions:
       contents: read
